@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week in Photography</title>
+<style>
+	@font-face {
+		font-family: 'Archivo';
+		src: url('fonts/archivo-500.woff2') format('woff2');
+		font-weight: 500;
+	}
+
+	/* misure prese dal sito WIP: margini 32px, logo alto 24px, testo 13px Archivo 500 */
+	html, body {
+		margin: 0;
+		height: 100%;
+		background: #000;
+		color: #fff;
+		overflow: hidden;
+		font-family: 'Archivo', sans-serif;
+		font-weight: 500;
+		font-size: 13px;
+		line-height: 1.5;
+	}
+
+	canvas {
+		position: fixed;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		display: block;
+		touch-action: none; /* sul telefono i gesti vanno alla foto, non alla pagina */
+	}
+
+	.legenda-tocco { display: none; }
+	body.tocco .legenda-mouse { display: none; }
+	body.tocco .legenda-tocco { display: block; }
+
+	.logo {
+		position: fixed;
+		top: 32px;
+		left: 32px;
+		height: 24px;
+		width: auto;
+		pointer-events: none;
+	}
+
+	.legenda {
+		position: fixed;
+		left: 32px;
+		bottom: 32px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		pointer-events: none;
+	}
+	.legenda li {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin-top: 12px;
+	}
+	.legenda svg {
+		width: 20px;
+		height: 20px;
+		flex: none;
+		stroke: #fff;
+		stroke-width: 2.4;
+		fill: none;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.firma {
+		position: fixed;
+		right: 32px;
+		bottom: 32px;
+		color: inherit;
+		text-decoration: none;
+	}
+
+	@media (max-width: 700px) {
+		.logo { top: 16px; left: 16px; height: 20px; }
+		.legenda { left: 16px; bottom: 16px; }
+		.firma { right: 16px; bottom: 16px; }
+	}
+</style>
+</head>
+<body>
+
+<canvas id="tela"></canvas>
+
+<img class="logo" src="logo_white.png" alt="Week in Photography.">
+
+<ul class="legenda legenda-mouse">
+	<li>
+		<svg viewBox="0 0 38 38"><path d="M5 19h28M10 14l-5 5 5 5M28 14l5 5-5 5"/></svg>
+		<span>x axis<br>rotate image</span>
+	</li>
+	<li>
+		<svg viewBox="0 0 38 38"><path d="M19 5v28M14 10l5-5 5 5M14 28l5 5 5-5"/></svg>
+		<span>y axis<br>apply effect</span>
+	</li>
+	<li>
+		<svg viewBox="0 0 38 38"><path d="M13 6v26M8 11l5-5 5 5M8 27l5 5 5-5M25 6v26M20 11l5-5 5 5M20 27l5 5 5-5"/></svg>
+		<span>scroll<br>zoom in/out</span>
+	</li>
+	<li>
+		<svg viewBox="0 0 38 38"><path d="M19 5v11M14 11l5 5 5-5M19 33V22M14 27l5-5 5 5"/></svg>
+		<span>click<br>random image</span>
+	</li>
+</ul>
+
+<ul class="legenda legenda-tocco">
+	<li>
+		<svg viewBox="0 0 38 38"><path d="M5 19h28M10 14l-5 5 5 5M28 14l5 5-5 5"/></svg>
+		<span>tilt phone<br>rotate image</span>
+	</li>
+	<li>
+		<svg viewBox="0 0 38 38"><path d="M19 5v28M14 10l5-5 5 5M14 28l5 5 5-5"/></svg>
+		<span>swipe up/down<br>apply effect</span>
+	</li>
+	<li>
+		<svg viewBox="0 0 38 38"><path d="M19 5v11M14 11l5 5 5-5M19 33V22M14 27l5-5 5 5"/></svg>
+		<span>tap<br>random image</span>
+	</li>
+</ul>
+
+<a class="firma" href="https://www.instagram.com/weekinphotography" target="_blank" rel="noopener">@weekinphotography</a>
+
+<script>
+// ---------------------------------------------------------------------------
+// Regolazioni
+// ---------------------------------------------------------------------------
+
+// Foto e mappe di profondità (chiaro = vicino) vengono lette da Materiali/:
+// ogni foto .jpg con accanto una mappa .png dello stesso nome entra in gioco.
+// Il click ne sceglie una a caso.
+const CARTELLA = 'Materiali/';
+let IMMAGINI = [];
+
+const ROTAZIONE_MAX = 40;     // gradi di inclinazione con il puntatore ai bordi
+const RILIEVO_MAX = 0.7;      // altezza del rilievo, in proporzione all'altezza della foto
+const EFFETTO_IN_BASSO = true; // true: puntatore in basso = rilievo massimo
+const ALTEZZA_FOTO = 0.5;     // quanta altezza dello schermo occupa la foto a zoom 1
+const ZOOM_MIN = 0.4;
+const ZOOM_MAX = 2.5;
+const MORBIDEZZA = 0.08;      // 0-1: più basso = movimenti più lenti e morbidi
+const INCLINAZIONE_PIENA = 25; // telefono: gradi di inclinazione per arrivare alla rotazione massima
+const CORSA_SWIPE = 0.6;      // telefono: frazione di altezza schermo da percorrere per l'effetto pieno
+const SUDDIVISIONI = 300;     // punti della griglia sul lato lungo: più alto = rilievo più fine
+
+// ---------------------------------------------------------------------------
+// WebGL
+// ---------------------------------------------------------------------------
+
+const tela = document.getElementById('tela');
+const gl = tela.getContext('webgl2', { antialias: true });
+if (!gl) {
+	document.body.insertAdjacentHTML('beforeend',
+		'<p style="position:fixed;top:50%;width:100%;text-align:center">Questo browser non supporta WebGL2.</p>');
+	throw new Error('WebGL2 non disponibile');
+}
+
+const VERTEX = `#version 300 es
+in vec2 aUV;
+uniform sampler2D uMappa;
+uniform float uRilievo;
+uniform vec2 uDimensioni;
+uniform mat4 uMatrice;
+out vec2 vUV;
+void main() {
+	float d = texture(uMappa, aUV).r;
+	// il rilievo cresce attorno al piano centrale: la rotazione resta bilanciata
+	vec3 p = vec3((aUV.x - 0.5) * uDimensioni.x,
+	              (aUV.y - 0.5) * uDimensioni.y,
+	              (d - 0.5) * uRilievo);
+	gl_Position = uMatrice * vec4(p, 1.0);
+	vUV = aUV;
+}`;
+
+const PIXEL = `#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform sampler2D uFoto;
+out vec4 colore;
+void main() {
+	colore = texture(uFoto, vUV);
+}`;
+
+function compila(tipo, sorgente) {
+	const s = gl.createShader(tipo);
+	gl.shaderSource(s, sorgente);
+	gl.compileShader(s);
+	if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+	return s;
+}
+
+const programma = gl.createProgram();
+gl.attachShader(programma, compila(gl.VERTEX_SHADER, VERTEX));
+gl.attachShader(programma, compila(gl.FRAGMENT_SHADER, PIXEL));
+gl.linkProgram(programma);
+if (!gl.getProgramParameter(programma, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(programma));
+gl.useProgram(programma);
+
+const u = {};
+for (const nome of ['uMappa', 'uFoto', 'uRilievo', 'uDimensioni', 'uMatrice']) {
+	u[nome] = gl.getUniformLocation(programma, nome);
+}
+gl.uniform1i(u.uFoto, 0);
+gl.uniform1i(u.uMappa, 1);
+
+// griglia: punti in coordinate 0-1, triangoli tra punti vicini
+let numIndici = 0;
+function creaGriglia(colonne, righe) {
+	const uv = new Float32Array((colonne + 1) * (righe + 1) * 2);
+	let k = 0;
+	for (let r = 0; r <= righe; r++) {
+		for (let c = 0; c <= colonne; c++) {
+			uv[k++] = c / colonne;
+			uv[k++] = r / righe;
+		}
+	}
+	const indici = new Uint32Array(colonne * righe * 6);
+	k = 0;
+	for (let r = 0; r < righe; r++) {
+		for (let c = 0; c < colonne; c++) {
+			const a = r * (colonne + 1) + c, b = a + 1, d = a + colonne + 1, e = d + 1;
+			indici.set([a, b, d, b, e, d], k);
+			k += 6;
+		}
+	}
+	const vao = gl.createVertexArray();
+	gl.bindVertexArray(vao);
+	gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+	gl.bufferData(gl.ARRAY_BUFFER, uv, gl.STATIC_DRAW);
+	const loc = gl.getAttribLocation(programma, 'aUV');
+	gl.enableVertexAttribArray(loc);
+	gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+	gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer());
+	gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indici, gl.STATIC_DRAW);
+	numIndici = indici.length;
+}
+
+function caricaImmagine(src) {
+	return new Promise((ok, errore) => {
+		const img = new Image();
+		img.onload = () => ok(img);
+		img.onerror = () => errore(new Error('Non trovo ' + src));
+		img.src = src;
+	});
+}
+
+function creaTexture(img, unita) {
+	const t = gl.createTexture();
+	gl.activeTexture(gl.TEXTURE0 + unita);
+	gl.bindTexture(gl.TEXTURE_2D, t);
+	gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+	gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+	gl.generateMipmap(gl.TEXTURE_2D);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+	return t;
+}
+
+// ---------------------------------------------------------------------------
+// Matrici (prospettiva, spostamento, rotazione)
+// ---------------------------------------------------------------------------
+
+function moltiplica(a, b) {
+	const r = new Float32Array(16);
+	for (let c = 0; c < 4; c++)
+		for (let i = 0; i < 4; i++)
+			r[c * 4 + i] = a[i] * b[c * 4] + a[4 + i] * b[c * 4 + 1] + a[8 + i] * b[c * 4 + 2] + a[12 + i] * b[c * 4 + 3];
+	return r;
+}
+
+function prospettiva(fov, aspetto, vicino, lontano) {
+	const f = 1 / Math.tan(fov / 2), n = 1 / (vicino - lontano);
+	return new Float32Array([f / aspetto, 0, 0, 0, 0, f, 0, 0, 0, 0, (vicino + lontano) * n, -1, 0, 0, 2 * vicino * lontano * n, 0]);
+}
+
+function sposta(z) {
+	return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, z, 1]);
+}
+
+function ruotaY(a) {
+	const c = Math.cos(a), s = Math.sin(a);
+	return new Float32Array([c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1]);
+}
+
+// ---------------------------------------------------------------------------
+// Stato e interazione
+// ---------------------------------------------------------------------------
+
+const FOV = 35 * Math.PI / 180;
+let aspettoFoto = 1;
+let indiceCorrente = -1;
+let pronta = false;
+let textureCorrenti = [];
+
+// "obiettivo" segue il puntatore, "attuale" lo insegue con morbidezza
+const obiettivo = { rot: 0, rilievo: 0, zoom: 1 };
+const attuale = { rot: 0, rilievo: 0, zoom: 1 };
+
+window.addEventListener('pointermove', (e) => {
+	if (e.pointerType === 'touch') return; // il tocco ha la sua logica, più sotto
+	const x = e.clientX / window.innerWidth * 2 - 1;   // -1 sinistra, +1 destra
+	const y = e.clientY / window.innerHeight;          // 0 in alto, 1 in basso
+	obiettivo.rot = x * ROTAZIONE_MAX * Math.PI / 180;
+	obiettivo.rilievo = (EFFETTO_IN_BASSO ? y : 1 - y) * RILIEVO_MAX;
+});
+
+// puntatore fuori dalla finestra: la foto torna dritta e piatta
+document.documentElement.addEventListener('pointerleave', (e) => {
+	if (e.pointerType === 'touch') return;
+	obiettivo.rot = 0;
+	obiettivo.rilievo = 0;
+});
+
+window.addEventListener('wheel', (e) => {
+	e.preventDefault();
+	obiettivo.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, obiettivo.zoom * Math.exp(-e.deltaY * 0.001)));
+}, { passive: false });
+
+tela.addEventListener('click', () => {
+	if (performance.now() - ultimoTocco < 600) return; // già gestito come tap
+	mostraCasuale();
+});
+
+// ---- Telefono: swipe verticale = effetto, tap = foto casuale, giroscopio = rotazione
+
+const tocco = window.matchMedia('(pointer: coarse)').matches;
+if (tocco) document.body.classList.add('tocco');
+
+let ultimoTocco = 0;
+let swipe = null;
+let effettoTocco = 0; // 0-1, resta dov'è tra uno swipe e l'altro
+
+tela.addEventListener('pointerdown', (e) => {
+	if (e.pointerType !== 'touch') return;
+	swipe = { y0: e.clientY, x0: e.clientX, t0: performance.now(), effetto0: effettoTocco };
+});
+
+tela.addEventListener('pointermove', (e) => {
+	if (e.pointerType !== 'touch' || !swipe) return;
+	// dito verso l'alto = più effetto
+	const delta = (swipe.y0 - e.clientY) / (window.innerHeight * CORSA_SWIPE);
+	effettoTocco = Math.min(1, Math.max(0, swipe.effetto0 + delta));
+	obiettivo.rilievo = effettoTocco * RILIEVO_MAX;
+});
+
+tela.addEventListener('pointerup', (e) => {
+	if (e.pointerType !== 'touch' || !swipe) return;
+	const fermo = Math.hypot(e.clientX - swipe.x0, e.clientY - swipe.y0) < 10;
+	const breve = performance.now() - swipe.t0 < 300;
+	swipe = null;
+	ultimoTocco = performance.now();
+	if (!fermo || !breve) return;
+	// il primo tap su iPhone chiede il permesso del giroscopio, i successivi cambiano foto
+	if (giroscopio === 'da-chiedere') return chiediGiroscopio();
+	mostraCasuale();
+});
+
+// giroscopio: 'da-chiedere' (iPhone), 'attivo', 'assente'
+let giroscopio = 'assente';
+let inclinazioneBase = null;
+
+function suInclinazione(e) {
+	if (e.gamma === null) return;
+	// la posizione in cui tieni il telefono all'inizio vale come "dritto"
+	if (inclinazioneBase === null) inclinazioneBase = e.gamma;
+	const t = Math.min(1, Math.max(-1, (e.gamma - inclinazioneBase) / INCLINAZIONE_PIENA));
+	obiettivo.rot = t * ROTAZIONE_MAX * Math.PI / 180;
+}
+
+async function chiediGiroscopio() {
+	try {
+		const esito = await DeviceOrientationEvent.requestPermission();
+		if (esito === 'granted') {
+			window.addEventListener('deviceorientation', suInclinazione);
+			giroscopio = 'attivo';
+			return;
+		}
+	} catch (err) {
+		console.warn('Giroscopio non disponibile:', err);
+	}
+	giroscopio = 'assente';
+}
+
+if (tocco && 'DeviceOrientationEvent' in window) {
+	if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+		giroscopio = 'da-chiedere'; // iPhone: serve un tap dell'utente
+	} else {
+		window.addEventListener('deviceorientation', suInclinazione); // Android
+		giroscopio = 'attivo';
+	}
+}
+
+async function mostra(i) {
+	const voce = IMMAGINI[i];
+	const [foto, mappa] = await Promise.all([caricaImmagine(voce.foto), caricaImmagine(voce.mappa)]);
+	// libera le immagini precedenti dalla scheda grafica
+	for (const t of textureCorrenti) gl.deleteTexture(t);
+	textureCorrenti = [creaTexture(foto, 0), creaTexture(mappa, 1)];
+	aspettoFoto = foto.naturalWidth / foto.naturalHeight;
+	// griglia con SUDDIVISIONI punti sul lato lungo, proporzionata alla foto
+	const colonne = aspettoFoto >= 1 ? SUDDIVISIONI : Math.round(SUDDIVISIONI * aspettoFoto);
+	const righe = aspettoFoto >= 1 ? Math.round(SUDDIVISIONI / aspettoFoto) : SUDDIVISIONI;
+	creaGriglia(colonne, righe);
+	indiceCorrente = i;
+	pronta = true;
+}
+
+function mostraCasuale() {
+	if (IMMAGINI.length === 1) return mostra(0);
+	let i;
+	do { i = Math.floor(Math.random() * IMMAGINI.length); } while (i === indiceCorrente);
+	return mostra(i);
+}
+
+// ---------------------------------------------------------------------------
+// Disegno
+// ---------------------------------------------------------------------------
+
+function ridimensiona() {
+	const dpr = Math.min(window.devicePixelRatio || 1, 2);
+	const w = Math.round(tela.clientWidth * dpr), h = Math.round(tela.clientHeight * dpr);
+	if (tela.width !== w || tela.height !== h) {
+		tela.width = w;
+		tela.height = h;
+	}
+	gl.viewport(0, 0, w, h);
+}
+
+function disegna() {
+	ridimensiona();
+	for (const k of ['rot', 'rilievo', 'zoom']) attuale[k] += (obiettivo[k] - attuale[k]) * MORBIDEZZA;
+
+	gl.clearColor(0, 0, 0, 1);
+	gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+	if (pronta) {
+		gl.enable(gl.DEPTH_TEST);
+		const aspettoSchermo = tela.width / tela.height;
+		// distanza della camera perché la foto occupi ALTEZZA_FOTO dello schermo
+		// (o ci stia in larghezza, se lo schermo è stretto)
+		const metaVista = Math.tan(FOV / 2);
+		const perAltezza = 1 / (2 * metaVista * ALTEZZA_FOTO);
+		const perLarghezza = aspettoFoto / (2 * metaVista * aspettoSchermo * 0.8);
+		const distanza = Math.max(perAltezza, perLarghezza) / attuale.zoom;
+
+		const matrice = moltiplica(
+			prospettiva(FOV, aspettoSchermo, 0.01, 100),
+			moltiplica(sposta(-distanza), ruotaY(attuale.rot)));
+
+		gl.uniformMatrix4fv(u.uMatrice, false, matrice);
+		gl.uniform2f(u.uDimensioni, aspettoFoto, 1);
+		gl.uniform1f(u.uRilievo, attuale.rilievo);
+		gl.drawElements(gl.TRIANGLES, numIndici, gl.UNSIGNED_INT, 0);
+	}
+	requestAnimationFrame(disegna);
+}
+
+// elenco dei file: in locale lo fornisce il server di avvia.command;
+// online (GitHub Pages non elenca le cartelle) si usa Materiali/elenco.json,
+// che avvia.command riscrive a ogni avvio
+async function elencoFile() {
+	try {
+		const r = await fetch(CARTELLA);
+		if (r.ok) {
+			const html = await r.text();
+			const nomi = [...html.matchAll(/href="([^"?#/]+)"/g)].map((m) => decodeURIComponent(m[1]));
+			if (nomi.length) return nomi;
+		}
+	} catch (err) { /* si passa all'elenco fisso */ }
+	return (await fetch(CARTELLA + 'elenco.json')).json();
+}
+
+async function leggiCartella() {
+	const nomi = await elencoFile();
+	const mappe = new Set(nomi.filter((n) => /\.png$/i.test(n)).map((n) => n.replace(/\.png$/i, '')));
+	IMMAGINI = nomi
+		.filter((n) => /\.jpe?g$/i.test(n) && mappe.has(n.replace(/\.jpe?g$/i, '')))
+		.map((n) => ({ foto: CARTELLA + n, mappa: CARTELLA + n.replace(/\.jpe?g$/i, '.png') }));
+	if (!IMMAGINI.length) throw new Error('Nessuna coppia foto + mappa in ' + CARTELLA);
+}
+
+leggiCartella().then(mostraCasuale).catch((err) => console.error(err));
+requestAnimationFrame(disegna);
+</script>
+</body>
+</html>
