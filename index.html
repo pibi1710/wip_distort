@@ -235,7 +235,9 @@ const ZOOM_MIN = 0.4;
 const ZOOM_MAX = 2.5;
 const MORBIDEZZA = 0.08;      // 0-1: più basso = movimenti più lenti e morbidi
 const INCLINAZIONE_PIENA = 25; // telefono: gradi di inclinazione per arrivare alla rotazione massima
-const CORSA_SWIPE = 0.6;      // telefono: frazione di altezza schermo da percorrere per l'effetto pieno
+const CORSA_SWIPE = 0.35;     // telefono: frazione di altezza schermo da percorrere per l'effetto pieno
+const RILIEVO_MAX_TOCCO = 1.0; // telefono: rilievo massimo (più forte che su computer)
+const CURVA_SWIPE = 0.6;      // telefono: sotto 1 l'effetto sale subito già dai primi millimetri di swipe
 const SUDDIVISIONI = 300;     // punti della griglia sul lato lungo: più alto = rilievo più fine
 
 // ---------------------------------------------------------------------------
@@ -437,7 +439,7 @@ tela.addEventListener('pointermove', (e) => {
 	// dito verso l'alto = più effetto
 	const delta = (swipe.y0 - e.clientY) / (window.innerHeight * CORSA_SWIPE);
 	effettoTocco = Math.min(1, Math.max(0, swipe.effetto0 + delta));
-	obiettivo.rilievo = effettoTocco * RILIEVO_MAX;
+	obiettivo.rilievo = Math.pow(effettoTocco, CURVA_SWIPE) * RILIEVO_MAX_TOCCO;
 });
 
 tela.addEventListener('pointerup', (e) => {
