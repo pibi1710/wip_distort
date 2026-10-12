@@ -10,6 +10,12 @@
 		src: url('fonts/archivo-500.woff2') format('woff2');
 		font-weight: 500;
 	}
+	@font-face {
+		font-family: 'Archivo';
+		src: url('fonts/archivo-500italic.woff2') format('woff2');
+		font-weight: 500;
+		font-style: italic;
+	}
 
 	/* misure prese dal sito WIP: margini 32px, logo alto 24px, testo 13px Archivo 500 */
 	html, body {
@@ -37,14 +43,66 @@
 	body.tocco .legenda-mouse { display: none; }
 	body.tocco .legenda-tocco { display: block; }
 
-	.logo {
+	/* intestazione e About copiati dal sito WIP (Instatic) */
+	.site-header {
 		position: fixed;
-		top: 32px;
-		left: 32px;
-		height: 24px;
-		width: auto;
+		top: 0;
+		left: 0;
+		right: 0;
+		display: flex;
+		align-items: flex-end;
+		justify-content: space-between;
+		padding: 32px;
+		z-index: 60;
 		pointer-events: none;
 	}
+	.site-header > * { pointer-events: auto; }
+	.site-logo-link { display: inline-flex; align-items: center; }
+	.logo {
+		display: block;
+		height: 24px;
+		width: auto;
+	}
+	.site-about-link {
+		appearance: none;
+		background: transparent;
+		border: none;
+		padding: 0;
+		margin: 0;
+		font-family: inherit;
+		font-weight: 500;
+		font-size: 14px;
+		line-height: 1.5;
+		color: #fff;
+		cursor: pointer;
+	}
+	.site-about-link:hover,
+	.site-about-link.is-active {
+		text-decoration: underline 1px #fff;
+		text-underline-offset: 2px;
+	}
+
+	.about-overlay {
+		position: fixed;
+		inset: 0;
+		background: #000;
+		z-index: 50;
+		display: none;
+		overflow-y: auto;
+	}
+	.about-overlay.is-open { display: block; }
+	.about-content {
+		max-width: 400px;
+		margin-left: auto;
+		padding: 200px 32px 48px;
+		font-size: 15px;
+		line-height: 1.55;
+	}
+	.about-lead { font-style: italic; margin: 0 0 24px; }
+	.about-body { margin: 0 0 24px; }
+	.about-sign { margin: 0; }
+	.about-social { font-style: italic; margin: 24px 0 0; }
+	.about-social-link { color: #fff; text-decoration: none; }
 
 	.legenda {
 		position: fixed;
@@ -72,18 +130,11 @@
 		stroke-linejoin: round;
 	}
 
-	.firma {
-		position: fixed;
-		right: 32px;
-		bottom: 32px;
-		color: inherit;
-		text-decoration: none;
-	}
-
+	/* sul telefono stessi margini del sito WIP: 24px sopra e sotto, 20px ai lati */
 	@media (max-width: 700px) {
-		.logo { top: 16px; left: 16px; height: 20px; }
-		.legenda { left: 16px; bottom: 16px; }
-		.firma { right: 16px; bottom: 16px; }
+		.site-header { padding: 24px 20px; }
+		.legenda { left: 20px; bottom: 24px; }
+		.about-content { max-width: none; padding: 120px 20px 32px; }
 	}
 </style>
 </head>
@@ -91,7 +142,10 @@
 
 <canvas id="tela"></canvas>
 
-<img class="logo" src="logo_white.png" alt="Week in Photography.">
+<div class="site-header">
+	<a class="site-logo-link" href="https://pibi1710.github.io/"><img class="logo" src="logo_white.png" alt="Week in Photography."></a>
+	<button class="site-about-link" aria-controls="about-overlay" aria-expanded="false" type="button">About</button>
+</div>
 
 <ul class="legenda legenda-mouse">
 	<li>
@@ -127,7 +181,40 @@
 	</li>
 </ul>
 
-<a class="firma" href="https://www.instagram.com/weekinphotography" target="_blank" rel="noopener">@weekinphotography</a>
+<div class="about-overlay" id="about-overlay">
+	<div class="about-content">
+		<p class="about-lead">Archivio fotografico in divenire</p>
+		<p class="about-body">WIP. è uno spazio di condivisione, processo e crescita nell’ambito della fotografia.<br>Non ha meta, criterio o logica.<br>WIP. è un campo di prova personale e si sviluppa (auspicabilmente) a livello settimanale.<br>L’unico vincolo imposto è quello di usare il formato 3:2 - 2:3 nativo.</p>
+		<p class="about-sign">p</p>
+		<p class="about-social"><a class="about-social-link" href="https://www.instagram.com/weekinphotography" target="_blank" rel="noopener noreferrer">@weekinphotography</a></p>
+	</div>
+</div>
+
+<script>
+// About: stesso comportamento del sito WIP (src/scripts/wip-about.js)
+(function () {
+	var link = document.querySelector('.site-about-link');
+	var overlay = document.querySelector('.about-overlay');
+	function isOpen() { return overlay.classList.contains('is-open'); }
+	function open() {
+		overlay.classList.add('is-open');
+		link.classList.add('is-active');
+		link.setAttribute('aria-expanded', 'true');
+	}
+	function close() {
+		overlay.classList.remove('is-open');
+		link.classList.remove('is-active');
+		link.setAttribute('aria-expanded', 'false');
+	}
+	link.addEventListener('click', function (ev) {
+		ev.preventDefault();
+		ev.stopPropagation();
+		if (isOpen()) close(); else open();
+	});
+	document.addEventListener('click', function () { if (isOpen()) close(); });
+	document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && isOpen()) close(); });
+})();
+</script>
 
 <script>
 // ---------------------------------------------------------------------------
