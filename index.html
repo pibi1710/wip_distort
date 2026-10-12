@@ -426,14 +426,40 @@ function mostraCasuale() {
 // Disegno
 // ---------------------------------------------------------------------------
 
+// area in cui centrare la foto, in frazioni dell'altezza dello schermo.
+// Su schermi stretti (telefono) è lo spazio libero tra logo e legenda,
+// altrimenti tutto lo schermo.
+const area = { centro: 0.5, altezza: 1 };
+
+function misuraArea() {
+	const H = window.innerHeight;
+	if (window.innerWidth > 700) {
+		area.centro = 0.5;
+		area.altezza = 1;
+		return;
+	}
+	const sopra = document.querySelector('.logo').getBoundingClientRect().bottom;
+	const legenda = [...document.querySelectorAll('.legenda')].find((l) => getComputedStyle(l).display !== 'none');
+	const sotto = legenda ? legenda.getBoundingClientRect().top : H;
+	area.centro = (sopra + sotto) / 2 / H;
+	area.altezza = Math.max(0.2, (sotto - sopra) / H);
+}
+
 function ridimensiona() {
 	const dpr = Math.min(window.devicePixelRatio || 1, 2);
 	const w = Math.round(tela.clientWidth * dpr), h = Math.round(tela.clientHeight * dpr);
 	if (tela.width !== w || tela.height !== h) {
 		tela.width = w;
 		tela.height = h;
+		misuraArea();
 	}
 	gl.viewport(0, 0, w, h);
+}
+
+// sposta l'immagine finita in verticale (frazione dello schermo, positivo = su),
+// senza cambiare la prospettiva della foto
+function spostaSchermo(dy) {
+	return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, dy, 0, 1]);
 }
 
 function disegna() {
@@ -449,13 +475,16 @@ function disegna() {
 		// distanza della camera perché la foto occupi ALTEZZA_FOTO dello schermo
 		// (o ci stia in larghezza, se lo schermo è stretto)
 		const metaVista = Math.tan(FOV / 2);
-		const perAltezza = 1 / (2 * metaVista * ALTEZZA_FOTO);
+		// sul telefono la foto riempie al massimo l'85% dello spazio tra logo e legenda
+		const altezzaFoto = Math.min(ALTEZZA_FOTO, area.altezza * 0.85);
+		const perAltezza = 1 / (2 * metaVista * altezzaFoto);
 		const perLarghezza = aspettoFoto / (2 * metaVista * aspettoSchermo * 0.8);
 		const distanza = Math.max(perAltezza, perLarghezza) / attuale.zoom;
 
 		const matrice = moltiplica(
-			prospettiva(FOV, aspettoSchermo, 0.01, 100),
-			moltiplica(sposta(-distanza), ruotaY(attuale.rot)));
+			spostaSchermo(1 - 2 * area.centro),
+			moltiplica(prospettiva(FOV, aspettoSchermo, 0.01, 100),
+				moltiplica(sposta(-distanza), ruotaY(attuale.rot))));
 
 		gl.uniformMatrix4fv(u.uMatrice, false, matrice);
 		gl.uniform2f(u.uDimensioni, aspettoFoto, 1);
@@ -489,6 +518,7 @@ async function leggiCartella() {
 	if (!IMMAGINI.length) throw new Error('Nessuna coppia foto + mappa in ' + CARTELLA);
 }
 
+document.fonts.ready.then(misuraArea);
 leggiCartella().then(mostraCasuale).catch((err) => console.error(err));
 requestAnimationFrame(disegna);
 </script>
