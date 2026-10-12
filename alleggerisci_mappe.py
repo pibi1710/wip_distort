@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-for p in sorted((Path(__file__).parent / 'Materiali').glob('*.png')):
+for p in sorted((Path(__file__).parent / 'Materiali' / 'Maps_distorci').glob('*.png')):
 	im = Image.open(p)
 	if im.mode == 'L':
 		continue

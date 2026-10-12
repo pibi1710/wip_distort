@@ -221,10 +221,12 @@
 // Regolazioni
 // ---------------------------------------------------------------------------
 
-// Foto e mappe di profondità (chiaro = vicino) vengono lette da Materiali/:
-// ogni foto .jpg con accanto una mappa .png dello stesso nome entra in gioco.
-// Il click ne sceglie una a caso.
+// Foto in Materiali/Foto_distorci/, mappe di profondità (chiaro = vicino) in
+// Materiali/Maps_distorci/: ogni foto .jpg con una mappa .png dello stesso nome
+// entra in gioco. Il click ne sceglie una a caso.
 const CARTELLA = 'Materiali/';
+const CARTELLA_FOTO = CARTELLA + 'Foto_distorci/';
+const CARTELLA_MAPPE = CARTELLA + 'Maps_distorci/';
 let IMMAGINI = [];
 
 const ROTAZIONE_MAX = 40;     // gradi di inclinazione con il puntatore ai bordi
@@ -583,27 +585,32 @@ function disegna() {
 	requestAnimationFrame(disegna);
 }
 
-// elenco dei file: in locale lo fornisce il server di avvia.command;
+// elenco dei file di una cartella, letto dal server locale di avvia.command
+async function elencoCartella(cartella) {
+	const r = await fetch(cartella);
+	if (!r.ok) return [];
+	const html = await r.text();
+	return [...html.matchAll(/href="([^"?#/]+)"/g)].map((m) => decodeURIComponent(m[1]));
+}
+
+// elenco di foto e mappe: in locale lo fornisce il server di avvia.command;
 // online (GitHub Pages non elenca le cartelle) si usa Materiali/elenco.json,
 // che avvia.command riscrive a ogni avvio
 async function elencoFile() {
 	try {
-		const r = await fetch(CARTELLA);
-		if (r.ok) {
-			const html = await r.text();
-			const nomi = [...html.matchAll(/href="([^"?#/]+)"/g)].map((m) => decodeURIComponent(m[1]));
-			if (nomi.length) return nomi;
-		}
+		const foto = await elencoCartella(CARTELLA_FOTO);
+		const mappe = await elencoCartella(CARTELLA_MAPPE);
+		if (foto.length && mappe.length) return { foto, mappe };
 	} catch (err) { /* si passa all'elenco fisso */ }
 	return (await fetch(CARTELLA + 'elenco.json')).json();
 }
 
 async function leggiCartella() {
-	const nomi = await elencoFile();
-	const mappe = new Set(nomi.filter((n) => /\.png$/i.test(n)).map((n) => n.replace(/\.png$/i, '')));
-	IMMAGINI = nomi
-		.filter((n) => /\.jpe?g$/i.test(n) && mappe.has(n.replace(/\.jpe?g$/i, '')))
-		.map((n) => ({ foto: CARTELLA + n, mappa: CARTELLA + n.replace(/\.jpe?g$/i, '.png') }));
+	const { foto, mappe } = await elencoFile();
+	const nomiMappe = new Set(mappe.filter((n) => /\.png$/i.test(n)).map((n) => n.replace(/\.png$/i, '')));
+	IMMAGINI = foto
+		.filter((n) => /\.jpe?g$/i.test(n) && nomiMappe.has(n.replace(/\.jpe?g$/i, '')))
+		.map((n) => ({ foto: CARTELLA_FOTO + n, mappa: CARTELLA_MAPPE + n.replace(/\.jpe?g$/i, '.png') }));
 	if (!IMMAGINI.length) throw new Error('Nessuna coppia foto + mappa in ' + CARTELLA);
 }
 

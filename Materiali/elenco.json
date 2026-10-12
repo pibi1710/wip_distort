@@ -1,6 +1,10 @@
-[
- "biennale_web-1.jpg",
- "biennale_web-1.png",
- "biennale_web-5.jpg",
- "biennale_web-5.png"
-]
+{
+ "foto": [
+  "biennale_web-1.jpg",
+  "biennale_web-5.jpg"
+ ],
+ "mappe": [
+  "biennale_web-1.png",
+  "biennale_web-5.png"
+ ]
+}
