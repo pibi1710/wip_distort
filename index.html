@@ -221,11 +221,11 @@
 // Regolazioni
 // ---------------------------------------------------------------------------
 
-// Foto in Materiali/Foto_distorci/, mappe di profondità (chiaro = vicino) in
-// Materiali/Maps_distorci/: ogni foto .jpg con una mappa .png dello stesso nome
-// entra in gioco. Il click ne sceglie una a caso.
+// Le foto arrivano direttamente dal sito WIP; le mappe di profondità
+// (chiaro = vicino) stanno in Materiali/Maps_distorci/. Materiali/elenco.json,
+// scritto da crea_mappe_web.py, abbina ogni foto alla sua mappa.
+// Il click ne sceglie una a caso.
 const CARTELLA = 'Materiali/';
-const CARTELLA_FOTO = CARTELLA + 'Foto_distorci/';
 const CARTELLA_MAPPE = CARTELLA + 'Maps_distorci/';
 let IMMAGINI = [];
 
@@ -337,6 +337,8 @@ function creaGriglia(colonne, righe) {
 function caricaImmagine(src) {
 	return new Promise((ok, errore) => {
 		const img = new Image();
+		// le foto arrivano dal sito WIP: senza questo WebGL non può usarle in locale
+		img.crossOrigin = 'anonymous';
 		img.onload = () => ok(img);
 		img.onerror = () => errore(new Error('Non trovo ' + src));
 		img.src = src;
@@ -510,7 +512,14 @@ function mostraCasuale() {
 	if (IMMAGINI.length === 1) return mostra(0);
 	let i;
 	do { i = Math.floor(Math.random() * IMMAGINI.length); } while (i === indiceCorrente);
-	return mostra(i);
+	// se una foto non si carica (es. appena aggiunta e non ancora online) la si
+	// toglie dal giro e se ne prova un'altra
+	return mostra(i).catch((err) => {
+		console.warn(err.message);
+		IMMAGINI.splice(i, 1);
+		if (i < indiceCorrente) indiceCorrente--;
+		if (IMMAGINI.length) return mostraCasuale();
+	});
 }
 
 // ---------------------------------------------------------------------------
@@ -585,33 +594,11 @@ function disegna() {
 	requestAnimationFrame(disegna);
 }
 
-// elenco dei file di una cartella, letto dal server locale di avvia.command
-async function elencoCartella(cartella) {
-	const r = await fetch(cartella);
-	if (!r.ok) return [];
-	const html = await r.text();
-	return [...html.matchAll(/href="([^"?#/]+)"/g)].map((m) => decodeURIComponent(m[1]));
-}
-
-// elenco di foto e mappe: in locale lo fornisce il server di avvia.command;
-// online (GitHub Pages non elenca le cartelle) si usa Materiali/elenco.json,
-// che avvia.command riscrive a ogni avvio
-async function elencoFile() {
-	try {
-		const foto = await elencoCartella(CARTELLA_FOTO);
-		const mappe = await elencoCartella(CARTELLA_MAPPE);
-		if (foto.length && mappe.length) return { foto, mappe };
-	} catch (err) { /* si passa all'elenco fisso */ }
-	return (await fetch(CARTELLA + 'elenco.json')).json();
-}
-
+// elenco di foto e mappe, scritto da crea_mappe_web.py
 async function leggiCartella() {
-	const { foto, mappe } = await elencoFile();
-	const nomiMappe = new Set(mappe.filter((n) => /\.png$/i.test(n)).map((n) => n.replace(/\.png$/i, '')));
-	IMMAGINI = foto
-		.filter((n) => /\.jpe?g$/i.test(n) && nomiMappe.has(n.replace(/\.jpe?g$/i, '')))
-		.map((n) => ({ foto: CARTELLA_FOTO + n, mappa: CARTELLA_MAPPE + n.replace(/\.jpe?g$/i, '.png') }));
-	if (!IMMAGINI.length) throw new Error('Nessuna coppia foto + mappa in ' + CARTELLA);
+	const { immagini } = await (await fetch(CARTELLA + 'elenco.json', { cache: 'no-cache' })).json();
+	IMMAGINI = immagini.map((v) => ({ foto: v.foto, mappa: CARTELLA_MAPPE + v.mappa }));
+	if (!IMMAGINI.length) throw new Error('Nessuna foto in ' + CARTELLA + 'elenco.json');
 }
 
 document.fonts.ready.then(misuraArea);
